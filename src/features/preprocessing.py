@@ -6,9 +6,8 @@ from typing import Iterable
 
 import pandas as pd
 
-from config import (
+from src.utils.config import (
     CATEGORICAL_COLUMNS,
-    DATA_PATH,
     NUMERICAL_COLUMNS,
     TARGET_COLUMN,
     PROCESSED_DATA_PATH
