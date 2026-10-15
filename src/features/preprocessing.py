@@ -322,3 +322,225 @@ def save_data(data: pd.DataFrame, file_path: str | Path = PROCESSED_DATA_PATH) -
         raise ValueError("file_path must end with '.csv' or '.parquet'")
 
     return path
+# =============================================================================
+# Preprocessing Functions
+# =============================================================================
+
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+from typing import Tuple, List
+
+
+def load_data(data_path: str) -> pd.DataFrame:
+    """
+    Load data from a CSV file.
+
+    Parameters
+    ----------
+    data_path : str
+        Path to the CSV file containing the data.
+
+    Returns
+    -------
+    pd.DataFrame
+        The loaded dataframe.
+    """
+    data = pd.read_csv(data_path)
+    return data
+
+
+def split_target_and_features(
+    data: pd.DataFrame,
+    target_column: str = 'income'
+) -> Tuple[pd.Series, pd.DataFrame]:
+    """
+    Split the target column from the feature columns.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        The full dataframe.
+    target_column : str, optional
+        Name of the target column, default is 'income'.
+
+    Returns
+    -------
+    Tuple[pd.Series, pd.DataFrame]
+        - income_raw: Series containing the target values.
+        - features_raw: DataFrame containing only the features.
+    """
+    income_raw = data[target_column]
+    features_raw = data.drop(target_column, axis=1)
+    return income_raw, features_raw
+
+
+def handle_skewed_features(
+    features_raw: pd.DataFrame,
+    skewed: List[str] = None
+) -> pd.DataFrame:
+    """
+    Handle skewed features using logarithmic transformation.
+
+    Parameters
+    ----------
+    features_raw : pd.DataFrame
+        DataFrame containing the raw features.
+    skewed : List[str], optional
+        List of skewed column names.
+        Default is ['capital-gain', 'capital-loss'].
+
+    Returns
+    -------
+    pd.DataFrame
+        New dataframe after applying log transformation on the specified columns.
+    """
+    if skewed is None:
+        skewed = ['capital-gain', 'capital-loss']
+
+    features_log_transformed = pd.DataFrame(data=features_raw)
+    features_log_transformed[skewed] = features_raw[skewed].apply(lambda x: np.log(x + 1))
+    return features_log_transformed
+
+
+def normalize_features(
+    features_log_transformed: pd.DataFrame,
+    numerical: List[str] = None
+) -> pd.DataFrame:
+    """
+    Normalize numerical features using MinMaxScaler to the range (0, 1).
+
+    Parameters
+    ----------
+    features_log_transformed : pd.DataFrame
+        DataFrame after log transformation.
+    numerical : List[str], optional
+        List of numerical column names to be normalized.
+        Default is ['age', 'education-num', 'capital-gain', 'capital-loss', 'hours-per-week'].
+
+    Returns
+    -------
+    pd.DataFrame
+        New dataframe after normalizing the specified numerical columns.
+    """
+    if numerical is None:
+        numerical = ['age', 'education-num', 'capital-gain', 'capital-loss', 'hours-per-week']
+
+    scaler = MinMaxScaler()  # default=(0, 1)
+    features_log_minmax_transform = pd.DataFrame(data=features_log_transformed)
+    features_log_minmax_transform[numerical] = scaler.fit_transform(
+        features_log_transformed[numerical]
+    )
+    return features_log_minmax_transform
+
+
+def encode_features_and_target(
+    features_log_minmax_transform: pd.DataFrame,
+    income_raw: pd.Series,
+    positive_label: str = '>50K'
+) -> Tuple[pd.DataFrame, pd.Series]:
+    """
+    Apply one-hot encoding to features and encode the target column into numerical values.
+
+    Parameters
+    ----------
+    features_log_minmax_transform : pd.DataFrame
+        DataFrame after normalization.
+    income_raw : pd.Series
+        Original series containing the textual target values.
+    positive_label : str, optional
+        The textual value representing the positive class, default is '>50K'.
+
+    Returns
+    -------
+    Tuple[pd.DataFrame, pd.Series]
+        - features_final: DataFrame after applying one-hot encoding.
+        - income: Series containing the numerically encoded target values (1 or 0).
+    """
+    features_final = pd.get_dummies(features_log_minmax_transform)
+    income = income_raw.apply(lambda x: 1 if x == positive_label else 0)
+
+    encoded = list(features_final.columns)
+    print("{} total features after one-hot encoding.".format(len(encoded)))
+
+    return features_final, income
+
+
+def split_train_test(
+    features_final: pd.DataFrame,
+    income: pd.Series,
+    test_size: float = 0.2,
+    random_state: int = 0
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """
+    Split the data into training and testing sets.
+
+    Parameters
+    ----------
+    features_final : pd.DataFrame
+        Final DataFrame containing the features.
+    income : pd.Series
+        Series containing the encoded target values.
+    test_size : float, optional
+        Proportion of the testing data, default is 0.2.
+    random_state : int, optional
+        Random seed for reproducibility, default is 0.
+
+    Returns
+    -------
+    Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]
+        - X_train: Training features.
+        - X_test: Testing features.
+        - y_train: Training targets.
+        - y_test: Testing targets.
+    """
+    X_train, X_test, y_train, y_test = train_test_split(
+        features_final,
+        income,
+        test_size=test_size,
+        random_state=random_state
+    )
+
+    print("Training set has {} samples.".format(X_train.shape[0]))
+    print("Testing set has {} samples.".format(X_test.shape[0]))
+
+    return X_train, X_test, y_train, y_test
+
+
+def preprocessing_data(
+    data_path: str
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """
+    Execute the full preprocessing pipeline on the data.
+
+    Steps:
+        1. Load the data.
+        2. Split target from features.
+        3. Handle skewed features.
+        4. Normalize numerical features.
+        5. Encode features and target.
+        6. Split data into training and testing sets.
+
+    Parameters
+    ----------
+    data_path : str
+        Path to the CSV file containing the data.
+
+    Returns
+    -------
+    Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]
+        - X_train: Training features.
+        - X_test: Testing features.
+        - y_train: Training targets.
+        - y_test: Testing targets.
+    """
+    data = load_data(data_path)
+    income_raw, features_raw = split_target_and_features(data)
+    features_log_transformed = handle_skewed_features(features_raw)
+    features_log_minmax_transform = normalize_features(features_log_transformed)
+    features_final, income = encode_features_and_target(
+        features_log_minmax_transform, income_raw
+    )
+    X_train, X_test, y_train, y_test = split_train_test(features_final, income)
+
+    return X_train, X_test, y_train, y_test
